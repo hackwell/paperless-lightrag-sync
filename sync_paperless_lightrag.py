@@ -275,9 +275,9 @@ def wait_for_services():
         if shutdown_requested:
             return False
         try:
-            # Check Paperless
+            # Check Paperless (use tags endpoint — root /api/ returns 406)
             req = urllib.request.Request(
-                PAPERLESS_URL + "/api/",
+                PAPERLESS_URL + "/api/tags/?page_size=1",
                 headers={"Authorization": "Token " + PAPERLESS_TOKEN, "Accept": "application/json"})
             urllib.request.urlopen(req, timeout=5)
 
