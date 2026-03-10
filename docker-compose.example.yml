@@ -1,0 +1,21 @@
+# Example: Add this service to your existing docker-compose.yml
+# Adjust network name and environment variables to match your setup.
+
+services:
+  paperless-lightrag-sync:
+    image: ghcr.io/hackwell/paperless-lightrag-sync:main
+    container_name: paperless-lightrag-sync
+    restart: unless-stopped
+    depends_on:
+      - lightrag
+      - webserver
+    environment:
+      PAPERLESS_URL: "http://webserver:8000"
+      PAPERLESS_TOKEN: "${PAPERLESS_TOKEN}"
+      LIGHTRAG_URL: "http://lightrag:9621"
+      PAPERLESS_BASE_URL: "https://dms.weller.cc"
+      SYNC_INTERVAL: "1800"  # 30 minutes
+    volumes:
+      - ./lightrag/data:/app/data  # shared with lightrag for state file
+    networks:
+      - your-network-name
