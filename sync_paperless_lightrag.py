@@ -11,6 +11,8 @@ Configuration via environment variables:
   PAPERLESS_BASE_URL - Public Paperless URL for document links (default: https://dms.weller.cc)
   STATE_FILE         - Path to sync state file (default: /app/data/sync_state.json)
   SYNC_INTERVAL      - Seconds between sync runs in daemon mode (default: 1800)
+  LIGHTRAG_USER      - LightRAG username for JWT auth
+  LIGHTRAG_PASSWORD  - LightRAG password for JWT auth
 """
 
 import json
@@ -31,6 +33,12 @@ LIGHTRAG_URL = os.environ.get("LIGHTRAG_URL", "http://lightrag:9621")
 PAPERLESS_BASE_URL = os.environ.get("PAPERLESS_BASE_URL", "https://dms.weller.cc")
 STATE_FILE = Path(os.environ.get("STATE_FILE", "/app/data/sync_state.json"))
 SYNC_INTERVAL = int(os.environ.get("SYNC_INTERVAL", "1800"))
+LIGHTRAG_USER = os.environ.get("LIGHTRAG_USER", "")
+LIGHTRAG_PASSWORD = os.environ.get("LIGHTRAG_PASSWORD", "")
+
+# Cached JWT token
+_lightrag_token = None
+_lightrag_token_time = 0
 
 # Graceful shutdown
 shutdown_requested = False
@@ -59,14 +67,41 @@ def paperless_get(endpoint, params=None):
         return json.loads(resp.read().decode())
 
 
-def lightrag_insert(text, file_source):
-    """Insert a document text into LightRAG."""
-    url = LIGHTRAG_URL + "/documents/text"
-    payload = json.dumps({"text": text, "file_source": file_source}).encode()
-    req = urllib.request.Request(url, data=payload, headers={
-        "Content-Type": "application/json",
+def lightrag_login():
+    """Login to LightRAG and return JWT token."""
+    global _lightrag_token, _lightrag_token_time
+    # Reuse token if less than 50 minutes old
+    if _lightrag_token and (time.time() - _lightrag_token_time) < 3000:
+        return _lightrag_token
+
+    url = LIGHTRAG_URL + "/login"
+    data = urllib.parse.urlencode({
+        "username": LIGHTRAG_USER,
+        "password": LIGHTRAG_PASSWORD
+    }).encode()
+    req = urllib.request.Request(url, data=data, headers={
+        "Content-Type": "application/x-www-form-urlencoded",
         "Accept": "application/json",
     }, method="POST")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        result = json.loads(resp.read().decode())
+        _lightrag_token = result.get("access_token")
+        _lightrag_token_time = time.time()
+        return _lightrag_token
+
+
+def lightrag_insert(text, file_source):
+    """Insert a document text into LightRAG."""
+    token = lightrag_login() if LIGHTRAG_USER else None
+    url = LIGHTRAG_URL + "/documents/text"
+    payload = json.dumps({"text": text, "file_source": file_source}).encode()
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
     with urllib.request.urlopen(req, timeout=120) as resp:
         return json.loads(resp.read().decode())
 
